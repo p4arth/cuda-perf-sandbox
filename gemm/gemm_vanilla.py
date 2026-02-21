@@ -55,17 +55,42 @@ M, N, K = 1024, 1024, 1024
 A = torch.randn((M, K), device="cuda")
 B = torch.randn((K, N), device="cuda")
 C = torch.zeros((M, N), device="cuda")
-vadd_compiled = cute.compile(
+gemm_compiled = cute.compile(
     gemm, 
     from_dlpack(A), 
     from_dlpack(B), 
     from_dlpack(C), 
     M, N, K, ALPHA, BETA
 )
-vadd_compiled(
-    from_dlpack(A), 
-    from_dlpack(B), 
-    from_dlpack(C), 
-    M, N, K, ALPHA, BETA
-)
-print(C)
+
+import torch.utils.benchmark as benchmark
+
+for _ in range(10):
+    gemm_compiled(from_dlpack(A), from_dlpack(B), from_dlpack(C), M, N, K, ALPHA, BETA)
+for _ in range(10):
+    res_pt = torch.addmm(C, A, B, alpha=ALPHA, beta=BETA)
+
+torch.cuda.synchronize()
+start_event = torch.cuda.Event(enable_timing=True)
+end_event = torch.cuda.Event(enable_timing=True)
+
+NLAPS = 10
+start_event.record()
+for _ in range(NLAPS): # Run multiple times for stability
+    gemm_compiled(from_dlpack(A), from_dlpack(B), from_dlpack(C), M, N, K, ALPHA, BETA)
+end_event.record()
+torch.cuda.synchronize()
+cute_time = start_event.elapsed_time(end_event) / NLAPS
+
+# --- 3. Profile PyTorch ---
+start_event.record()
+for _ in range(NLAPS):
+    res_pt = torch.addmm(C, A, B, alpha=ALPHA, beta=BETA)
+end_event.record()
+torch.cuda.synchronize()
+pt_time = start_event.elapsed_time(end_event) / NLAPS
+
+print(f"CuTe Naive Kernel: {cute_time:.4f} ms")
+print(f"PyTorch :  {pt_time:.4f} ms")
+print(f"Speedup:   {cute_time / pt_time:.2f}x (PyTorch is faster)")
+
