@@ -1,4 +1,3 @@
-import math
 import torch
 import cutlass
 import cutlass.cute as cute
@@ -39,8 +38,8 @@ def gemm(
     alpha: cute.Float32,
     beta:  cute.Float32, 
 ):
-    n_thrd_x = 32
-    n_thrd_y = 32
+    n_thrd_x = 8
+    n_thrd_y = 8
     grid_x = (N + n_thrd_y - 1) // n_thrd_y
     grid_y = (M + n_thrd_x - 1) // n_thrd_x
     gemm_kernel(gA, gB, gC, M, N, K, alpha, beta).launch(
@@ -50,10 +49,11 @@ def gemm(
 
 ALPHA = 1.0
 BETA = 0.5
-M, N, K = 1024, 1024, 1024
+M, N, K = 4096, 4096, 4096
 A = torch.ones((M, K), device="cuda")
 B = torch.ones((K, N), device="cuda")
 C = torch.zeros((M, N), device="cuda")
+A_ = from_dlpack(A)
 gemm_compiled = cute.compile(
     gemm, 
     from_dlpack(A), 
@@ -61,19 +61,20 @@ gemm_compiled = cute.compile(
     from_dlpack(C), 
     M, N, K, ALPHA, BETA
 )
+# exit()
 
-# import torch.utils.benchmark as benchmark
+import torch.utils.benchmark as benchmark
 
-# for _ in range(10):
-#     gemm_compiled(from_dlpack(A), from_dlpack(B), from_dlpack(C), M, N, K, ALPHA, BETA)
-# for _ in range(10):
-#     res_pt = torch.addmm(C, A, B, alpha=ALPHA, beta=BETA)
+for _ in range(10):
+    gemm_compiled(from_dlpack(A), from_dlpack(B), from_dlpack(C), M, N, K, ALPHA, BETA)
+for _ in range(10):
+    res_pt = torch.addmm(C, A, B, alpha=ALPHA, beta=BETA)
 
 torch.cuda.synchronize()
 start_event = torch.cuda.Event(enable_timing=True)
 end_event = torch.cuda.Event(enable_timing=True)
 
-NLAPS = 1
+NLAPS = 10
 start_event.record()
 for _ in range(NLAPS): # Run multiple times for stability
     gemm_compiled(from_dlpack(A), from_dlpack(B), from_dlpack(C), M, N, K, ALPHA, BETA)

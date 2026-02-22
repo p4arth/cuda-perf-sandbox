@@ -40,8 +40,8 @@ def gemm(
     alpha: cute.Float32,
     beta:  cute.Float32, 
 ):
-    n_thrd_x = 32
-    n_thrd_y = 32
+    n_thrd_x = 8
+    n_thrd_y = 8
     grid_x = (M + n_thrd_x - 1) // n_thrd_x
     grid_y = (N + n_thrd_y - 1) // n_thrd_y
     gemm_kernel(gA, gB, gC, M, N, K, alpha, beta).launch(
@@ -51,7 +51,7 @@ def gemm(
 
 ALPHA = 1.0
 BETA = 0.5
-M, N, K = 1024, 1024, 1024
+M, N, K = 4096, 4096, 4096
 A = torch.randn((M, K), device="cuda")
 B = torch.randn((K, N), device="cuda")
 C = torch.zeros((M, N), device="cuda")
